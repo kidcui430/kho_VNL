@@ -1,0 +1,1006 @@
+// ============================================================
+// FRONTEND VANILLA JS - QUAN LY NVL
+// ============================================================
+const API_URL = "https://api-nvl.quangtriet430.workers.dev";
+
+let user = null;
+let inventoryData = [];
+let supplierData = [];
+let productData = [];
+let cart = [];
+let currentReportData = [];
+
+const $ = (id) => document.getElementById(id);
+
+const fmt = (n) => {
+  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(
+    Number(n || 0),
+  );
+};
+
+const todayISO = () => {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+};
+
+function showToast(message, error = false) {
+  const el = $("toast");
+  el.textContent = message;
+  if (error) {
+    el.classList.add("error");
+  } else {
+    el.classList.remove("error");
+  }
+  el.classList.remove("hidden");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
+    el.classList.add("hidden");
+  }, 3500);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (e) {
+    // ignore
+  }
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+function isWorkshop() {
+  return user && (user.bo_phan === "XUONG" || user.bo_phan === "SX");
+}
+
+function typeLabel(type) {
+  const map = {
+    NHAP_KHO: "Nhập kho",
+    XUAT_SAN_XUAT: "Xuất Sản Xuất",
+    OPENING: "Tồn đầu kỳ",
+  };
+  return map[type] || type;
+}
+
+async function login() {
+  try {
+    const ma_nv = $("username").value.trim().toUpperCase();
+    const password = $("password").value;
+    const data = await api("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ ma_nv: ma_nv, password: password }),
+    });
+    user = data;
+    localStorage.setItem("nvl_user", JSON.stringify(user));
+    enterApp();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function logout() {
+  localStorage.removeItem("nvl_user");
+  user = null;
+  location.reload();
+}
+
+async function enterApp() {
+  $("loginView").classList.add("hidden");
+  $("mainView").classList.remove("hidden");
+  $("userInfo").textContent = `${user.ten_nv} (${user.bo_phan})`;
+  $("headerSub").textContent = "V. Test";
+
+  const vpElements = document.querySelectorAll(".vp-only");
+  for (let i = 0; i < vpElements.length; i++) {
+    if (isWorkshop()) {
+      vpElements[i].classList.add("hidden");
+    } else {
+      vpElements[i].classList.remove("hidden");
+    }
+  }
+
+  if (!isWorkshop()) {
+    $("navGiaoDich").textContent = "Lịch sử GD";
+    document.querySelector("[data-sub='tx-create']").classList.add("hidden");
+    switchTab("tab-vattu");
+    switchSub("tx-history");
+  } else {
+    switchTab("tab-giaodich");
+    switchSub("tx-create");
+  }
+
+  $("txDate").value = todayISO();
+  setDefaultDateRanges();
+  setupTypeOptions();
+  await loadBootstrap();
+  await loadHistory();
+}
+
+async function loadBootstrap() {
+  try {
+    const data = await api("/api/bootstrap");
+    inventoryData = data.items || [];
+    supplierData = data.nccs || [];
+    productData = data.products || [];
+    renderMasterData();
+  } catch (e) {
+    showToast(`Không tải được dữ liệu: ${e.message}`, true);
+  }
+}
+
+function renderMasterData() {
+  const catSet = new Set();
+  for (let i = 0; i < inventoryData.length; i++) {
+    if (inventoryData[i].phan_loai) {
+      catSet.add(inventoryData[i].phan_loai);
+    }
+  }
+  const cats = Array.from(catSet).sort((a, b) => a.localeCompare(b, "vi"));
+
+  let catHtml = `<option value="">-- Chọn phân loại --</option>`;
+  let catAllHtml = `<option value="">Tất cả nhóm</option>`;
+  let dataListHtml = "";
+
+  for (let i = 0; i < cats.length; i++) {
+    const safeCat = escapeHtml(cats[i]);
+    catHtml += `<option>${safeCat}</option>`;
+    catAllHtml += `<option>${safeCat}</option>`;
+    dataListHtml += `<option value="${safeCat}"></option>`;
+  }
+
+  $("categorySelect").innerHTML = catHtml;
+  $("inventoryCategory").innerHTML = catAllHtml;
+  $("categoryList").innerHTML = dataListHtml;
+
+  let nccOpts = "";
+  for (let i = 0; i < supplierData.length; i++) {
+    const n = supplierData[i];
+    nccOpts += `<option value="${escapeHtml(n.ma_ncc)}">${escapeHtml(n.ma_ncc)} | ${escapeHtml(n.ten_ncc)}</option>`;
+  }
+  $("txNcc").innerHTML =
+    `<option value="">-- Tùy chọn NCC --</option>` + nccOpts;
+  $("newSupplier").innerHTML =
+    `<option value="">-- Không chọn --</option>` + nccOpts;
+
+  let prodOpts = `<option value="">-- Chọn mã sản phẩm --</option>`;
+  for (let i = 0; i < productData.length; i++) {
+    const p = productData[i];
+    prodOpts += `<option value="${escapeHtml(p.ma_sp)}">${escapeHtml(p.ma_sp)} | ${escapeHtml(p.ten_sp)}</option>`;
+  }
+  $("productSelect").innerHTML = prodOpts;
+
+  renderInventory();
+  renderSuppliers();
+}
+
+function setupTypeOptions() {
+  if (isWorkshop()) {
+    $("typeSelect").innerHTML = `
+      <option value="NHAP_KHO">Nhập hàng vào Kho</option>
+      <option value="XUAT_SAN_XUAT">Xuất ra Line Sản Xuất</option>
+    `;
+    $("typeSelect").disabled = false;
+  } else {
+    $("typeSelect").innerHTML =
+      `<option value="">-- Chỉ dành cho Xưởng --</option>`;
+    $("typeSelect").disabled = true;
+  }
+
+  $("historyType").innerHTML = `
+    <option value="">Tất cả</option>
+    <option value="NHAP_KHO">Nhập kho</option>
+    <option value="XUAT_SAN_XUAT">Xuất Sản Xuất</option>
+  `;
+  onTypeChange();
+}
+
+function onTypeChange() {
+  const type = $("typeSelect").value;
+  if (type !== "NHAP_KHO") {
+    $("nccWrap").classList.add("hidden");
+    $("docWrap").classList.add("hidden");
+    $("priceWrap").classList.add("hidden");
+  } else {
+    $("nccWrap").classList.remove("hidden");
+    $("docWrap").classList.remove("hidden");
+    $("priceWrap").classList.remove("hidden");
+  }
+
+  if (type !== "XUAT_SAN_XUAT") {
+    $("productWrap").classList.add("hidden");
+  } else {
+    $("productWrap").classList.remove("hidden");
+  }
+}
+
+function onCategoryChange() {
+  const cat = $("categorySelect").value;
+  const sel = $("itemSelect");
+
+  if (!cat) {
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+  }
+
+  let html = `<option value="">-- Chọn NVL --</option>`;
+  for (let i = 0; i < inventoryData.length; i++) {
+    const item = inventoryData[i];
+    if (item.phan_loai === cat && item.trang_thai !== "INACTIVE") {
+      let label = `${escapeHtml(item.ma_hang)} | ${escapeHtml(item.ten_hang)}`;
+      if (item.quy_cach) {
+        label += ` | ${escapeHtml(item.quy_cach)}`;
+      }
+      html += `<option value="${escapeHtml(item.ma_hang)}">${label}</option>`;
+    }
+  }
+
+  sel.innerHTML = html;
+  $("stockPanel").classList.add("hidden");
+}
+
+function onItemChange() {
+  const val = $("itemSelect").value;
+  let item = null;
+  for (let i = 0; i < inventoryData.length; i++) {
+    if (inventoryData[i].ma_hang === val) {
+      item = inventoryData[i];
+      break;
+    }
+  }
+
+  if (!item) {
+    $("stockPanel").classList.add("hidden");
+    return;
+  }
+
+  $("stockPanel").classList.remove("hidden");
+  $("stockWarehouse").textContent = fmt(item.ton_kho);
+  $("stockUnit").textContent = item.don_vi_tinh || "-";
+
+  if (item.trang_thai === "BLOCKED") {
+    $("stockStatus").textContent = "CHẶN XUẤT";
+    $("stockStatus").style.color = "var(--danger)";
+  } else {
+    $("stockStatus").textContent = "Bình thường";
+    $("stockStatus").style.color = "var(--success)";
+  }
+}
+
+function addToCart() {
+  const val = $("itemSelect").value;
+  let item = null;
+  for (let i = 0; i < inventoryData.length; i++) {
+    if (inventoryData[i].ma_hang === val) {
+      item = inventoryData[i];
+      break;
+    }
+  }
+
+  const qty = Number($("qtyInput").value);
+  const type = $("typeSelect").value;
+
+  if (!item) return showToast("Hãy chọn NVL.", true);
+  if (!Number.isFinite(qty) || qty <= 0)
+    return showToast("Số lượng chính phải lớn hơn 0.", true);
+  if (item.trang_thai === "BLOCKED" && type === "XUAT_SAN_XUAT")
+    return showToast("NVL này đang bị chặn xuất.", true);
+  if (type === "XUAT_SAN_XUAT" && !$("productSelect").value)
+    return showToast("VUI LÒNG CHỌN MÃ SẢN PHẨM KHI XUẤT SẢN XUẤT.", true);
+  if (type === "XUAT_SAN_XUAT" && qty > Number(item.ton_kho || 0))
+    return showToast("Số lượng vượt quá Tồn Kho hiện tại.", true);
+
+  const unitWeight = Number($("qtySubInput").value) || 0;
+  let totalSubQty = 0;
+  if (unitWeight > 0) totalSubQty = unitWeight * qty;
+
+  let ma_sp = "";
+  if (type === "XUAT_SAN_XUAT") ma_sp = $("productSelect").value;
+
+  cart.push({
+    ma_hang: item.ma_hang,
+    phan_loai: item.phan_loai,
+    ten_hang: item.ten_hang,
+    don_vi_tinh: item.don_vi_tinh,
+    loai_giao_dich: type,
+    so_luong: qty,
+    sl_phu: totalSubQty,
+    dvt_phu: $("unitSubInput").value.trim(),
+    quy_cach_gd: $("batchSpecInput").value.trim(),
+    ma_ncc: $("txNcc").value,
+    ma_sp_sx: ma_sp,
+    so_chung_tu: $("docInput").value.trim(),
+    don_gia: Number($("priceInput").value || 0),
+    ghi_chu: $("noteInput").value.trim(),
+  });
+
+  renderCart();
+  $("qtyInput").value = "";
+  $("noteInput").value = "";
+  $("qtySubInput").value = "";
+  $("unitSubInput").value = "";
+  $("batchSpecInput").value = "";
+}
+
+function renderCart() {
+  const tbody = $("cartTable").querySelector("tbody");
+  if (cart.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Chưa có dữ liệu.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  for (let i = 0; i < cart.length; i++) {
+    const x = cart[i];
+    let quyDoi = "-";
+    if (x.sl_phu > 0 || x.quy_cach_gd) {
+      let str1 = x.sl_phu > 0 ? fmt(x.sl_phu) : "";
+      let str2 = escapeHtml(x.dvt_phu);
+      let str3 = escapeHtml(x.quy_cach_gd);
+      quyDoi = `<b>${str1} ${str2}</b><br><small class="text-muted">${str3}</small>`;
+    }
+
+    html += `<tr>
+      <td><b>${escapeHtml(x.ma_hang)}</b><br>${escapeHtml(x.ten_hang)}</td>
+      <td>${quyDoi}</td>
+      <td>${escapeHtml(typeLabel(x.loai_giao_dich))}</td>
+      <td><b>${fmt(x.so_luong)}</b> ${escapeHtml(x.don_vi_tinh)}</td>
+      <td>${escapeHtml(x.ghi_chu || "-")}</td>
+      <td><button class="danger btn-sm" onclick="removeCart(${i})">Xóa</button></td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+window.removeCart = function (idx) {
+  cart.splice(idx, 1);
+  renderCart();
+};
+
+async function submitTransaction() {
+  if (cart.length === 0) return showToast("Phiếu đang trống.", true);
+  try {
+    await api("/api/transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: user.ma_nv,
+        tx_date: $("txDate").value,
+        transactions: cart,
+      }),
+    });
+    cart = [];
+    renderCart();
+    showToast("Đã ghi nhận giao dịch thành công.");
+    await loadBootstrap();
+    await loadHistory();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function loadHistory() {
+  try {
+    const params = new URLSearchParams();
+    if ($("historyFrom").value) params.set("from", $("historyFrom").value);
+    if ($("historyTo").value) params.set("to", $("historyTo").value);
+    if ($("historyType").value) params.set("type", $("historyType").value);
+    if ($("historyQ") && $("historyQ").value.trim())
+      params.set("q", $("historyQ").value.trim());
+
+    const data = await api(`/api/history?${params}`);
+    renderHistory(data.rows || []);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function renderHistory(rows) {
+  const tbody = $("historyTable").querySelector("tbody");
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">Không có dữ liệu.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    let quyDoiStr = "";
+    if (r.sl_phu > 0 || r.quy_cach_gd) {
+      let str1 = r.sl_phu > 0 ? fmt(r.sl_phu) : "";
+      let str2 = escapeHtml(r.dvt_phu);
+      let str3 = r.quy_cach_gd ? `(${escapeHtml(r.quy_cach_gd)})` : "";
+      quyDoiStr = `<br><small class="text-muted">QĐ: ${str1} ${str2} ${str3}</small>`;
+    }
+
+    html += `<tr>
+      <td>${formatDateTime(r.thoi_gian_gd)}</td>
+      <td>${escapeHtml(r.ten_nv || r.nguoi_giao_dich)}</td>
+      <td><b>${escapeHtml(r.ma_hang)}</b><br>${escapeHtml(r.ten_hang)}</td>
+      <td>${escapeHtml(r.loai_hien_thi || typeLabel(r.loai_giao_dich))}</td>
+      <td>${escapeHtml(r.ten_sp || r.ma_ncc || "-")}</td>
+      <td><b>${fmt(r.so_luong)}</b> ${escapeHtml(r.don_vi_tinh || "")} ${quyDoiStr}</td>
+      <td>${escapeHtml(r.ghi_chu || "-")}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function renderInventory() {
+  const q = $("inventorySearch").value.trim().toLowerCase();
+  const cat = $("inventoryCategory").value;
+
+  const rows = [];
+  for (let i = 0; i < inventoryData.length; i++) {
+    const item = inventoryData[i];
+    let matchCat = true;
+    if (cat && item.phan_loai !== cat) matchCat = false;
+    let matchQ = true;
+    if (q) {
+      const searchStr =
+        `${item.ma_hang} ${item.ten_hang} ${item.quy_cach}`.toLowerCase();
+      if (!searchStr.includes(q)) matchQ = false;
+    }
+    if (matchCat && matchQ) rows.push(item);
+  }
+
+  const tbody = $("inventoryTable").querySelector("tbody");
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">Không tìm thấy NVL.</td></tr>`;
+  } else {
+    let html = "";
+    for (let i = 0; i < rows.length; i++) {
+      const item = rows[i];
+      let btnHtml = `
+        <button class="btn-sm" style="background:#0284c7; color:#fff;" onclick="openEditModal('${item.ma_hang}')">Sửa</button>
+        <button class="btn-sm danger" style="margin-left:4px;" onclick="deleteItem('${item.ma_hang}')">Xóa</button>
+      `;
+
+      html += `<tr>
+        <td><b>${escapeHtml(item.ma_hang)}</b></td>
+        <td>${escapeHtml(item.phan_loai)}</td>
+        <td>${escapeHtml(item.ten_hang)}</td>
+        <td>${escapeHtml(item.quy_cach || "-")}</td>
+        <td>${escapeHtml(item.don_vi_tinh)}</td>
+        <td><b>${fmt(item.ton_kho)}</b></td>
+        <td class="vp-only">${btnHtml}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  }
+
+  const vpElements = document.querySelectorAll(".vp-only");
+  for (let i = 0; i < vpElements.length; i++) {
+    if (isWorkshop()) vpElements[i].classList.add("hidden");
+    else vpElements[i].classList.remove("hidden");
+  }
+}
+
+// CÁC HÀM XỬ LÝ SỬA / XÓA NVL
+window.openEditModal = function (maHang) {
+  let item = null;
+  for (let i = 0; i < inventoryData.length; i++) {
+    if (inventoryData[i].ma_hang === maHang) {
+      item = inventoryData[i];
+      break;
+    }
+  }
+  if (!item) return;
+
+  $("editItemCode").value = item.ma_hang;
+  $("editItemCat").value = item.phan_loai;
+  $("editItemName").value = item.ten_hang;
+  $("editItemSpec").value = item.quy_cach || "";
+  $("editItemUnit").value = item.don_vi_tinh;
+
+  $("editItemModal").classList.remove("hidden");
+};
+
+window.closeEditModal = function () {
+  $("editItemModal").classList.add("hidden");
+};
+
+window.saveEditItem = async function () {
+  try {
+    const payload = {
+      ma_hang: $("editItemCode").value,
+      phan_loai: $("editItemCat").value.trim(),
+      ten_hang: $("editItemName").value.trim(),
+      quy_cach: $("editItemSpec").value.trim(),
+      don_vi_tinh: $("editItemUnit").value,
+    };
+
+    if (!payload.ten_hang || !payload.don_vi_tinh) {
+      return showToast("Tên NVL và ĐVT không được để trống.", true);
+    }
+
+    await api("/api/items/edit", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeEditModal();
+    showToast("Đã cập nhật thông tin NVL.");
+    await loadBootstrap();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+};
+
+window.deleteItem = async function (maHang) {
+  const msg = `Xác nhận Xóa mã ${maHang}?\n\nLưu ý: Nếu NVL này đã phát sinh nhập/xuất, hệ thống sẽ tự động "Ẩn".`;
+  if (!confirm(msg)) return;
+
+  try {
+    await api("/api/items/delete", {
+      method: "POST",
+      body: JSON.stringify({ ma_hang: maHang }),
+    });
+    showToast("Đã Xóa/Ẩn thành công.");
+    await loadBootstrap();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+};
+
+async function addItem() {
+  try {
+    const payload = {
+      phan_loai: $("newCategory").value.trim(),
+      ten_hang: $("newName").value.trim(),
+      quy_cach: $("newSpec").value.trim(),
+      don_vi_tinh: $("newUnit").value,
+      ma_ncc: $("newSupplier").value,
+      ghi_chu: $("newNote").value.trim(),
+    };
+    await api("/api/items", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    showToast(`Đã thêm NVL thành công.`);
+
+    $("newCategory").value = "";
+    $("newName").value = "";
+    $("newSpec").value = "";
+    $("newNote").value = "";
+
+    await loadBootstrap();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function renderSuppliers() {
+  const tbody = $("supplierTable").querySelector("tbody");
+  let html = "";
+  for (let i = 0; i < supplierData.length; i++) {
+    const n = supplierData[i];
+    html += `<tr>
+      <td>${escapeHtml(n.ma_ncc)}</td>
+      <td>${escapeHtml(n.ten_ncc)}</td>
+      <td>${escapeHtml(n.dia_chi || "-")}</td>
+      <td>${escapeHtml(n.so_dt || "-")}</td>
+      <td>${escapeHtml(n.nguoi_lien_he || "-")}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+async function addSupplier() {
+  try {
+    const payload = {
+      ten_ncc: $("supName").value.trim(),
+      dia_chi: $("supAddress").value.trim(),
+      so_dt: $("supPhone").value.trim(),
+      nguoi_lien_he: $("supContact").value.trim(),
+      email: $("supEmail").value.trim(),
+      ghi_chu: $("supNote").value.trim(),
+    };
+    await api("/api/suppliers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    showToast(`Đã thêm NCC thành công.`);
+
+    $("supName").value = "";
+    $("supAddress").value = "";
+    $("supPhone").value = "";
+    $("supContact").value = "";
+    $("supEmail").value = "";
+    $("supNote").value = "";
+
+    await loadBootstrap();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function setDefaultDateRanges() {
+  const t = todayISO();
+  $("historyTo").value = t;
+  const back = new Date(t);
+  back.setDate(back.getDate() - 30);
+  $("historyFrom").value = toISO(back);
+  setQuickRange("month");
+}
+
+function setQuickRange(kind) {
+  const now = new Date();
+  let from = null;
+  let to = null;
+
+  if (kind === "today") {
+    from = now;
+    to = now;
+  } else if (kind === "7days") {
+    to = now;
+    from = new Date(now);
+    from.setDate(from.getDate() - 6);
+  } else if (kind === "month") {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to = now;
+  }
+
+  $("reportFrom").value = toISO(from);
+  $("reportTo").value = toISO(to);
+  loadReport();
+}
+
+async function loadReport() {
+  const from = $("reportFrom").value;
+  const to = $("reportTo").value;
+  const type = $("reportType").value;
+  const q = $("reportQ").value.trim();
+
+  if (!from || !to) return;
+
+  try {
+    const data = await api(
+      `/api/report/daily?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`,
+    );
+    currentReportData = data.rows || [];
+    renderReportMatrix(currentReportData, data.total || {});
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function renderReportMatrix(rows, total) {
+  const tbody = $("reportTable").querySelector("tbody");
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">Không có dữ liệu trong khoảng này.</td></tr>`;
+  } else {
+    let html = "";
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      html += `<tr class="matrix-row" onclick="toggleMatrixDetail(this, '${r.ma_hang}')" title="Nhấn để xem chi tiết GD của ${escapeHtml(r.ten_hang)}">
+        <td><b>${escapeHtml(r.ma_hang)}</b></td>
+        <td><span style="color:var(--accent); font-weight:600;">${escapeHtml(r.ten_hang)}</span> <span style="font-size:11px;color:#888;">(▾ Xem)</span></td>
+        <td>${escapeHtml(r.phan_loai)}</td>
+        <td>${escapeHtml(r.don_vi_tinh)}</td>
+        <td><b style="color:var(--success)">${fmt(r.nhap)}</b></td>
+        <td><b style="color:var(--danger)">${fmt(r.xuat_sx)}</b></td>
+        <td><b style="color:var(--navy)">${fmt(r.ton_kho)}</b></td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  }
+
+  $("footIn").textContent = fmt(total.nhap);
+  $("footProd").textContent = fmt(total.xuat_sx);
+}
+
+window.toggleMatrixDetail = async function (row, maHang) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains("detail-row")) {
+    next.remove();
+    return;
+  }
+
+  const from = $("reportFrom").value;
+  const to = $("reportTo").value;
+
+  try {
+    const data = await api(
+      `/api/report/detail?ma_hang=${encodeURIComponent(maHang)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    );
+    const tr = document.createElement("tr");
+    tr.className = "detail-row";
+
+    const rows = data.rows || [];
+    let detailHtml = "";
+
+    if (rows.length === 0) {
+      detailHtml = `<tr><td colspan="6">Không có giao dịch chi tiết.</td></tr>`;
+    } else {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        let quyDoiStr = "";
+        if (r.sl_phu > 0 || r.quy_cach_gd) {
+          let str1 = r.sl_phu > 0 ? fmt(r.sl_phu) : "";
+          let str2 = escapeHtml(r.dvt_phu);
+          let str3 = r.quy_cach_gd ? `(${escapeHtml(r.quy_cach_gd)})` : "";
+          quyDoiStr = `<br><small style="color:#666;">QĐ: ${str1} ${str2} ${str3}</small>`;
+        }
+
+        detailHtml += `<tr>
+          <td>${formatDateTime(r.thoi_gian_gd)}</td>
+          <td><b>${escapeHtml(r.loai_hien_thi)}</b></td>
+          <td><b>${fmt(r.so_luong)}</b> ${quyDoiStr}</td>
+          <td>${escapeHtml(r.ten_sp || "-")}</td>
+          <td>${escapeHtml(r.ten_nv || r.nguoi_giao_dich)}</td>
+          <td>${escapeHtml(r.ghi_chu || "-")}</td>
+        </tr>`;
+      }
+    }
+
+    tr.innerHTML = `
+      <td colspan="7" style="padding:0; border:0;">
+        <div class="detail-box">
+          <p style="margin:0 0 10px; font-weight:600; color:var(--navy);">Lịch sử giao dịch chi tiết</p>
+          <div class="table-responsive">
+            <table style="min-width:600px; background:#fff;">
+              <thead>
+                <tr>
+                  <th>Thời gian</th>
+                  <th>Loại GD</th>
+                  <th>SL Thực Tế</th>
+                  <th>SP SX</th>
+                  <th>Người thực hiện</th>
+                  <th>Ghi chú</th>
+                </tr>
+              </thead>
+              <tbody>${detailHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </td>
+    `;
+
+    row.parentNode.insertBefore(tr, row.nextSibling);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+};
+
+// ==========================================
+// HÀM XUẤT EXCEL CHI TIẾT GIAO DỊCH
+// ==========================================
+async function exportExcel() {
+  const from = $("reportFrom").value;
+  const to = $("reportTo").value;
+  const type = $("reportType").value;
+  const q = $("reportQ").value.trim();
+
+  if (!from || !to) {
+    return showToast("Vui lòng chọn Từ ngày và Đến ngày.", true);
+  }
+
+  if (typeof XLSX === "undefined") {
+    return showToast("Đang tải thư viện Excel, vui lòng đợi giây lát.", true);
+  }
+
+  showToast("Đang kết xuất dữ liệu...");
+
+  try {
+    // Gọi API History để lấy nguyên danh sách giao dịch chi tiết thay vì dữ liệu gom nhóm
+    const params = new URLSearchParams();
+    params.set("from", from);
+    params.set("to", to);
+    if (type) params.set("type", type);
+    if (q) params.set("q", q);
+
+    const data = await api(`/api/history?${params}`);
+    const rows = data.rows || [];
+
+    if (rows.length === 0) {
+      return showToast("Không có dữ liệu chi tiết để xuất.", true);
+    }
+
+    // Xây dựng mảng dữ liệu cho SheetJS
+    const ws_data = [
+      [
+        "THỜI GIAN",
+        "NGƯỜI THAO TÁC",
+        "MÃ NVL",
+        "TÊN NVL",
+        "LOẠI GIAO DỊCH",
+        "SỐ LƯỢNG CHÍNH",
+        "ĐVT",
+        "SL QUY ĐỔI",
+        "ĐVT QUY ĐỔI",
+        "QUY CÁCH ĐỢT",
+        "SP SẢN XUẤT",
+        "GHI CHÚ",
+      ],
+    ];
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      ws_data.push([
+        formatDateTime(r.thoi_gian_gd),
+        r.ten_nv || r.nguoi_giao_dich,
+        r.ma_hang,
+        r.ten_hang,
+        r.loai_hien_thi || typeLabel(r.loai_giao_dich),
+        Number(r.so_luong),
+        r.don_vi_tinh,
+        r.sl_phu > 0 ? Number(r.sl_phu) : "",
+        r.dvt_phu || "",
+        r.quy_cach_gd || "",
+        r.ten_sp || "",
+        r.ghi_chu || "",
+      ]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+    // Căn chỉnh độ rộng cột cho đẹp mắt khi mở file
+    ws["!cols"] = [
+      { wch: 18 }, // Thời gian
+      { wch: 22 }, // Người thao tác
+      { wch: 12 }, // Mã NVL
+      { wch: 28 }, // Tên NVL
+      { wch: 18 }, // Loại giao dịch
+      { wch: 18 }, // Số lượng chính
+      { wch: 10 }, // ĐVT
+      { wch: 15 }, // SL Quy đổi
+      { wch: 15 }, // ĐVT Quy đổi
+      { wch: 20 }, // Quy cách
+      { wch: 25 }, // SP Sản xuất
+      { wch: 35 }, // Ghi chú
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ChiTietGiaoDich");
+
+    XLSX.writeFile(wb, `ChiTietGiaoDich_${from}_den_${to}.xlsx`);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function switchTab(id) {
+  const tabs = document.querySelectorAll(".tab-content");
+  for (let i = 0; i < tabs.length; i++) {
+    tabs[i].classList.add("hidden");
+  }
+  $(id).classList.remove("hidden");
+
+  const btns = document.querySelectorAll(".nav-btn");
+  for (let i = 0; i < btns.length; i++) {
+    if (btns[i].dataset.tab === id) {
+      btns[i].classList.add("active");
+    } else {
+      btns[i].classList.remove("active");
+    }
+  }
+
+  if (id === "tab-baocao") loadReport();
+  if (id === "tab-giaodich") loadHistory();
+}
+
+function switchSub(id) {
+  const subs = document.querySelectorAll("#tab-giaodich .sub-content");
+  for (let i = 0; i < subs.length; i++) {
+    subs[i].classList.add("hidden");
+  }
+  $(id).classList.remove("hidden");
+
+  const btns = document.querySelectorAll("#tab-giaodich .sub-btn");
+  for (let i = 0; i < btns.length; i++) {
+    if (btns[i].dataset.sub === id) {
+      btns[i].classList.add("active");
+    } else {
+      btns[i].classList.remove("active");
+    }
+  }
+
+  if (id === "tx-history") loadHistory();
+}
+
+function escapeHtml(v) {
+  if (v === null || v === undefined) {
+    v = "";
+  }
+  return String(v).replace(/[&<>'"]/g, function (c) {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;",
+    };
+    return map[c];
+  });
+}
+
+function toISO(d) {
+  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return x.toISOString().slice(0, 10);
+}
+
+function formatDateOnly(s) {
+  if (!s) return "";
+  const parts = s.slice(0, 10).split("-");
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function formatDateTime(s) {
+  if (!s) return "";
+  return `${formatDateOnly(s)} ${s.slice(11, 16)}`;
+}
+
+function bindEvents() {
+  $("loginBtn").addEventListener("click", login);
+
+  $("username").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") login();
+  });
+
+  $("password").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") login();
+  });
+
+  $("logoutBtn").addEventListener("click", logout);
+
+  $("categorySelect").addEventListener("change", onCategoryChange);
+  $("itemSelect").addEventListener("change", onItemChange);
+  $("typeSelect").addEventListener("change", onTypeChange);
+
+  $("addToCartBtn").addEventListener("click", addToCart);
+  $("submitTxBtn").addEventListener("click", submitTransaction);
+
+  $("historyFilterBtn").addEventListener("click", loadHistory);
+  $("inventoryCategory").addEventListener("change", renderInventory);
+  $("inventorySearch").addEventListener("input", renderInventory);
+
+  $("addItemBtn").addEventListener("click", addItem);
+  $("addSupplierBtn").addEventListener("click", addSupplier);
+
+  $("loadReportBtn").addEventListener("click", loadReport);
+  $("exportExcelBtn").addEventListener("click", exportExcel);
+
+  const quickBtns = document.querySelectorAll(".quick-buttons button");
+  for (let i = 0; i < quickBtns.length; i++) {
+    quickBtns[i].addEventListener("click", function () {
+      setQuickRange(this.dataset.range);
+    });
+  }
+
+  const navBtns = document.querySelectorAll(".nav-btn");
+  for (let i = 0; i < navBtns.length; i++) {
+    navBtns[i].addEventListener("click", function () {
+      switchTab(this.dataset.tab);
+    });
+  }
+
+  const subBtns = document.querySelectorAll("#tab-giaodich .sub-btn");
+  for (let i = 0; i < subBtns.length; i++) {
+    subBtns[i].addEventListener("click", function () {
+      switchSub(this.dataset.sub);
+    });
+  }
+}
+
+window.addEventListener("DOMContentLoaded", async function () {
+  bindEvents();
+  renderCart();
+  const saved = localStorage.getItem("nvl_user");
+  if (saved) {
+    try {
+      user = JSON.parse(saved);
+      await enterApp();
+    } catch (e) {
+      localStorage.removeItem("nvl_user");
+    }
+  }
+});

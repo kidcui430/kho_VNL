@@ -1,0 +1,163 @@
+-- ============================================================
+-- RESET SẠCH TOÀN BỘ VÀ TẠO MỚI DATABASE D1 (SQLITE)
+-- ============================================================
+
+PRAGMA foreign_keys = OFF;
+
+-- 1. DROP SẠCH BẢNG CŨ VÀ VIEW CŨ (THEO ĐÚNG THỨ TỰ)
+DROP VIEW IF EXISTS v_ton_nvl;
+DROP TABLE IF EXISTS Giao_Dich_NVL;
+DROP TABLE IF EXISTS Danh_Muc_NVL;
+DROP TABLE IF EXISTS San_Pham_SX;
+DROP TABLE IF EXISTS Nha_Cung_Cap;
+DROP TABLE IF EXISTS Nguoi_Dung;
+
+PRAGMA foreign_keys = ON;
+
+-- 2. TẠO MỚI BẢNG NGƯỜI DÙNG
+CREATE TABLE Nguoi_Dung (
+  ma_nv TEXT PRIMARY KEY,
+  ten_nv TEXT NOT NULL,
+  password TEXT NOT NULL,
+  bo_phan TEXT NOT NULL CHECK (bo_phan IN ('VP','XUONG','SX')),
+  role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('ADMIN','USER')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours'))
+);
+
+-- 3. TẠO MỚI BẢNG NHÀ CUNG CẤP (NCC)
+CREATE TABLE Nha_Cung_Cap (
+  ma_ncc TEXT PRIMARY KEY,
+  ten_ncc TEXT NOT NULL,
+  dia_chi TEXT DEFAULT '',
+  so_dt TEXT DEFAULT '',
+  nguoi_lien_he TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  ghi_chu TEXT DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours'))
+);
+
+-- 4. TẠO MỚI BẢNG NGUYÊN VẬT LIỆU (NVL)
+CREATE TABLE Danh_Muc_NVL (
+  ma_hang TEXT PRIMARY KEY,
+  phan_loai TEXT NOT NULL,
+  ten_hang TEXT NOT NULL,
+  quy_cach TEXT DEFAULT '',
+  don_vi_tinh TEXT NOT NULL,
+  ma_ncc TEXT DEFAULT '',
+  trang_thai TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (trang_thai IN ('ACTIVE','BLOCKED','INACTIVE')),
+  ghi_chu TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours'))
+);
+
+CREATE UNIQUE INDEX idx_nvl_unique_name
+ON Danh_Muc_NVL(phan_loai, ten_hang, quy_cach);
+
+CREATE INDEX idx_nvl_phan_loai
+ON Danh_Muc_NVL(phan_loai);
+
+-- 5. TẠO MỚI BẢNG MÃ HÀNG SẢN XUẤT (SẢN PHẨM / BÁN THÀNH PHẨM XUẤT LINE)
+CREATE TABLE San_Pham_SX (
+  ma_sp TEXT PRIMARY KEY,
+  ten_sp TEXT NOT NULL,
+  quy_cach TEXT DEFAULT '',
+  don_vi_tinh TEXT DEFAULT 'Cái',
+  ghi_chu TEXT DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours'))
+);
+
+-- 6. TẠO MỚI BẢNG GIAO DỊCH KHO (SỔ CÁI LEDGER)
+CREATE TABLE Giao_Dich_NVL (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ma_hang TEXT NOT NULL,
+  loai_giao_dich TEXT NOT NULL CHECK (loai_giao_dich IN (
+    'OPENING',
+    'NHAP_KHO',
+    'XUAT_XUONG',
+    'XUAT_SAN_XUAT',
+    'YEU_CAU_XUONG',
+    'TRA_KHO',
+    'HOAN_TRA_XUONG',
+    'HUY_KHO',
+    'HUY_XUONG'
+  )),
+  so_luong REAL NOT NULL CHECK (so_luong > 0),
+  sl_phu REAL DEFAULT 0,
+  dvt_phu TEXT DEFAULT '',
+  quy_cach_gd TEXT DEFAULT '',
+  khoi_luong_kg REAL DEFAULT 0,
+  delta_kho REAL NOT NULL DEFAULT 0,
+  delta_xuong REAL NOT NULL DEFAULT 0,
+  trang_thai TEXT NOT NULL DEFAULT 'approved' CHECK (trang_thai IN ('pending','approved','rejected')),
+  nguoi_giao_dich TEXT NOT NULL,
+  nguoi_duyet TEXT DEFAULT '',
+  ma_ncc TEXT DEFAULT '',
+  ma_sp_sx TEXT DEFAULT '',
+  so_chung_tu TEXT DEFAULT '',
+  don_gia REAL NOT NULL DEFAULT 0,
+  thanh_tien REAL NOT NULL DEFAULT 0,
+  ghi_chu TEXT DEFAULT '',
+  thoi_gian_gd TEXT NOT NULL DEFAULT (datetime('now', '+7 hours')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '+7 hours')),
+  approved_at TEXT,
+  FOREIGN KEY (ma_hang) REFERENCES Danh_Muc_NVL(ma_hang),
+  FOREIGN KEY (nguoi_giao_dich) REFERENCES Nguoi_Dung(ma_nv)
+);
+
+CREATE INDEX idx_gd_ngay ON Giao_Dich_NVL(thoi_gian_gd);
+CREATE INDEX idx_gd_ma_hang ON Giao_Dich_NVL(ma_hang);
+CREATE INDEX idx_gd_status ON Giao_Dich_NVL(trang_thai);
+CREATE INDEX idx_gd_type_date ON Giao_Dich_NVL(loai_giao_dich, thoi_gian_gd);
+
+-- 7. VIEW TỒN HIỆN TẠI (TÍNH TỪ TOÀN BỘ GIAO DỊCH APPROVED)
+CREATE VIEW v_ton_nvl AS
+SELECT
+  d.ma_hang,
+  d.phan_loai,
+  d.ten_hang,
+  d.quy_cach,
+  d.don_vi_tinh,
+  d.ma_ncc,
+  d.trang_thai,
+  d.ghi_chu,
+  COALESCE(SUM(CASE WHEN g.trang_thai = 'approved' THEN g.delta_kho ELSE 0 END), 0) AS ton_kho,
+  COALESCE(SUM(CASE WHEN g.trang_thai = 'approved' THEN g.delta_xuong ELSE 0 END), 0) AS ton_xuong
+FROM Danh_Muc_NVL d
+LEFT JOIN Giao_Dich_NVL g ON g.ma_hang = d.ma_hang
+GROUP BY
+  d.ma_hang, d.phan_loai, d.ten_hang, d.quy_cach,
+  d.don_vi_tinh, d.ma_ncc, d.trang_thai, d.ghi_chu;
+
+-- ============================================================
+-- DỮ LIỆU BAN ĐẦU (SEED DATA MẪU)
+-- ============================================================
+INSERT INTO Nguoi_Dung (ma_nv, ten_nv, password, bo_phan, role) VALUES
+('ADMIN', 'Quản trị viên', '123', 'VP', 'ADMIN'),
+('VP01', 'Nhân viên kho', '123', 'VP', 'USER'),
+('XUONG01', 'Tổ sản xuất 01', '123', 'XUONG', 'USER');
+
+INSERT INTO Nha_Cung_Cap (ma_ncc, ten_ncc, dia_chi, so_dt, nguoi_lien_he, email) VALUES
+('NCC001', 'Nhà cung cấp Thép Việt Nhật', 'TP.HCM', '0901234567', 'Nguyễn Văn A', 'vietnhat@supplier.com'),
+('NCC002', 'Công ty Hóa Chất Minh Trí', 'Bình Dương', '0908765432', 'Trần Thị B', 'minhtri@supplier.com');
+
+INSERT INTO Danh_Muc_NVL (ma_hang, phan_loai, ten_hang, quy_cach, don_vi_tinh, ma_ncc, ghi_chu) VALUES
+('NVL001', 'Hóa Chất', 'Dung dịch tẩy rửa công nghiệp', 'Can 20L', 'Lít', 'NCC002', 'Bảo quản nơi thoáng mát'),
+('NVL002', 'Bao Bì', 'Thùng carton 5 lớp', '500x400x300 mm', 'Cái', 'NCC001', ''),
+('NVL003', 'Kim Loại', 'Thép tròn đặc C45', 'Ø20 mm x 6m', 'Kg', 'NCC001', 'ĐVT kiểm đếm: Cây');
+
+INSERT INTO San_Pham_SX (ma_sp, ten_sp, quy_cach, don_vi_tinh, ghi_chu) VALUES
+('SP001', 'Trục dẫn hướng máy CNC', 'Ø20 x 500mm, tôi cao tần', 'Cái', 'Mã bản vẽ: DWG-SP01'),
+('SP002', 'Bạc đạn trượt tuyến tính', 'Size 30mm', 'Bộ', 'Gia công chính xác');
+
+-- Tồn đầu kỳ mẫu
+INSERT INTO Giao_Dich_NVL
+(ma_hang, loai_giao_dich, so_luong, delta_kho, delta_xuong, trang_thai, nguoi_giao_dich, ghi_chu, thoi_gian_gd)
+VALUES
+('NVL001', 'OPENING', 500, 500, 0, 'approved', 'ADMIN', 'Tồn đầu kỳ ban đầu', datetime('now','-10 days','+7 hours')),
+('NVL002', 'OPENING', 1200, 1000, 200, 'approved', 'ADMIN', 'Tồn đầu kỳ ban đầu', datetime('now','-10 days','+7 hours')),
+('NVL003', 'OPENING', 300, 250, 50, 'approved', 'ADMIN', 'Tồn đầu kỳ ban đầu', datetime('now','-10 days','+7 hours'));

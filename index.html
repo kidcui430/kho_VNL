@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quản lý kho NVL</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <section id="loginView" class="container">
+      <div class="card login-box">
+        <h2>ĐĂNG NHẬP HỆ THỐNG</h2>
+        <input
+          id="username"
+          value="ADMIN"
+          placeholder="Mã nhân viên"
+          autocomplete="username"
+        />
+        <input
+          id="password"
+          value="123"
+          type="password"
+          placeholder="Mật khẩu"
+          autocomplete="current-password"
+        />
+        <button id="loginBtn" class="w-100">Đăng nhập</button>
+        <p class="text-muted demo-note">VP: ADMIN/123 | XƯỞNG: XUONG01/123</p>
+      </div>
+    </section>
+
+    <section id="mainView" class="hidden">
+      <header>
+        <div>
+          <h3>QUẢN LÝ KHO NVL</h3>
+          <small class="text-muted" id="headerSub">V. Test</small>
+        </div>
+        <div class="header-user">
+          <span id="userInfo"></span>
+          <button id="logoutBtn" class="danger btn-sm">Thoát</button>
+        </div>
+      </header>
+
+      <nav class="nav-menu no-print">
+        <button class="nav-btn active" data-tab="tab-giaodich" id="navGiaoDich">
+          Giao dịch
+        </button>
+        <button class="nav-btn" data-tab="tab-vattu">Tồn kho</button>
+        <button class="nav-btn vp-only" data-tab="tab-baocao">Báo cáo</button>
+        <button class="nav-btn vp-only" data-tab="tab-ncc">Nhà cung cấp</button>
+        <button class="nav-btn vp-only" data-tab="tab-sanpham">Mã hàng SX</button>
+      </nav>
+
+      <main class="container">
+        <section id="tab-giaodich" class="tab-content">
+          <div class="sub-nav no-print">
+            <button class="sub-btn active" data-sub="tx-create">
+              Tạo phiếu mới
+            </button>
+            <button class="sub-btn" data-sub="tx-history">Lịch sử GD</button>
+          </div>
+
+          <div id="tx-create" class="sub-content">
+            <div class="card" style="padding-top: 16px">
+              <div class="form-grid two-col" style="margin-bottom: 8px">
+                <label
+                  >Loại giao dịch
+                  <select id="typeSelect"></select>
+                </label>
+                <label
+                  >Ngày GD
+                  <input type="date" id="txDate" />
+                </label>
+              </div>
+
+              <div class="form-grid two-col">
+                <label
+                  >Phân loại
+                  <select id="categorySelect">
+                    <option value="">-- Chọn phân loại --</option>
+                  </select>
+                </label>
+                <label
+                  >NVL
+                  <select id="itemSelect" disabled>
+                    <option value="">-- Chọn NVL --</option>
+                  </select>
+                </label>
+              </div>
+
+              <div
+                id="stockPanel"
+                class="stock-panel hidden"
+                style="grid-template-columns: repeat(3, 1fr)"
+              >
+                <div>
+                  <span>Tồn kho hiện tại</span
+                  ><strong id="stockWarehouse">0</strong>
+                </div>
+                <div>
+                  <span>ĐVT Chuẩn</span><strong id="stockUnit">-</strong>
+                </div>
+                <div>
+                  <span>Trạng thái</span><strong id="stockStatus">-</strong>
+                </div>
+              </div>
+
+              <div class="form-grid two-col">
+                <label
+                  >Số lượng (Chuẩn)
+                  <input
+                    type="number"
+                    id="qtyInput"
+                    min="0.001"
+                    step="any"
+                    placeholder="Nhập SL..."
+                  />
+                </label>
+
+                <label id="productWrap" class="hidden"
+                  >Sản phẩm xuất
+                  <select id="productSelect">
+                    <option value="">--Chọn mã hàng--</option>
+                  </select>
+                </label>
+
+                <label id="nccWrap" class="hidden"
+                  >Nhà cung cấp
+                  <select id="txNcc">
+                    <option value="">-- Tùy chọn --</option>
+                  </select>
+                </label>
+
+                <label id="docWrap" class="hidden"
+                  >Số chứng từ (HĐ/PO)
+                  <input id="docInput" placeholder="Nhập số phiếu..." />
+                </label>
+
+                <label id="priceWrap" class="hidden"
+                  >Đơn giá
+                  <input
+                    id="priceInput"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0"
+                  />
+                </label>
+              </div>
+
+              <div
+                style="
+                  background: #f8fafc;
+                  padding: 14px;
+                  border-radius: 8px;
+                  border: 1px dashed #cbd5e1;
+                  margin-bottom: 16px;
+                "
+              >
+                <p
+                  style="
+                    margin: 0 0 10px;
+                    font-weight: 600;
+                    color: #475569;
+                    font-size: 13px;
+                  "
+                >
+                  Quy cách đóng gói & SL
+                </p>
+                <div
+                  class="form-grid two-col"
+                  style="gap: 10px; margin-bottom: 10px"
+                >
+                  <label
+                    >SL Đóng gói (Bó/Bao/Cây)
+                    <input
+                      type="number"
+                      id="qtySubInput"
+                      min="0"
+                      step="any"
+                      placeholder="VD: 1 (bó), 2 (bao)..."
+                    />
+                  </label>
+                  <label
+                    >ĐVT Đóng gói
+                    <select id="unitSubInput">
+                      <option value="">-- Chọn --</option>
+                      <option value="Bó">Bó</option>
+                      <option value="Bao">Bao</option>
+                      <option value="Cây">Cây</option>
+                      <option value="Tấm">Tấm</option>
+                      <option value="Cuộn">Cuộn</option>
+                      <option value="Thùng">Thùng</option>
+                      <option value="Hộp">Hộp</option>
+                      <option value="Cục">Cục</option>
+                      <option value="Thanh">Thanh</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="form-grid two-col" style="gap: 10px">
+                  <label
+                    >Chi tiết SL chính
+                    <input
+                      id="batchSpecInput"
+                      placeholder="VD: 4*5 + 6*6 hoặc 1000..."
+                    />
+                  </label>
+                  <label
+                    >Tổng cân nặng đợt này (Kg)
+                    <input
+                      type="number"
+                      id="weightKgInput"
+                      min="0"
+                      step="any"
+                      placeholder="VD: 150 (Kg)"
+                    />
+                  </label>
+                </div>
+                <small
+                  class="text-muted"
+                  style="display: block; margin-top: 6px"
+                >
+                  *Gõ phép tính (VD: <b>4*5 + 6*6</b>) hoặc số cái mỗi bao (VD:
+                  <b>1000</b>), máy sẽ tự tính ra <b>Số lượng (ĐVT Chính)</b> ở
+                  trên.
+                </small>
+              </div>
+
+              <label
+                >Ghi chú
+                <input id="noteInput" placeholder="Ghi chú thêm..." />
+              </label>
+              <br />
+              <button
+                id="addToCartBtn"
+                class="w-100"
+                style="font-size: 15px; padding: 12px"
+              >
+                + NHập phiếu tạm
+              </button>
+            </div>
+
+            <div class="card">
+              <div class="flex-between">
+                <h2>Phiếu tạm</h2>
+                <button id="submitTxBtn" class="success">Lưu Phiếu</button>
+              </div>
+              <div class="table-responsive">
+                <table id="cartTable">
+                  <thead>
+                    <tr>
+                      <th>NVL</th>
+                      <th>Tổng Quy đổi</th>
+                      <th>Loại GD</th>
+                      <th>SL Chính</th>
+                      <th>Ghi chú</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="tx-history" class="sub-content hidden">
+            <div class="card">
+              <div class="filter-row">
+                <label>Từ<input type="date" id="historyFrom" /></label>
+                <label>Đến<input type="date" id="historyTo" /></label>
+                <label
+                  >Loại<select id="historyType">
+                    <option value="">Tất cả</option>
+                  </select></label
+                >
+                <label
+                  >Tìm NVL<input id="historyQ" placeholder="Mã / Tên..."
+                /></label>
+                <button id="historyFilterBtn">Lọc</button>
+              </div>
+              <div class="table-responsive">
+                <table id="historyTable">
+                  <thead>
+                    <tr>
+                      <th>Thời gian</th>
+                      <th>Người tạo</th>
+                      <th>NVL</th>
+                      <th>Loại</th>
+                      <th>SP / NCC</th>
+                      <th>SL Thực Tế</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-vattu" class="tab-content hidden">
+          <div class="card">
+            <div class="flex-between">
+              <div>
+                <h2>Danh mục Tồn kho</h2>
+                <p class="text-muted">Tồn kho thực tế.</p>
+              </div>
+              <div class="inline-filters">
+                <select id="inventoryCategory">
+                  <option value="">Tất cả nhóm</option></select
+                ><input id="inventorySearch" placeholder="Tìm mã / tên..." />
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table id="inventoryTable">
+                <thead>
+                  <tr>
+                    <th>Mã</th>
+                    <th>Phân loại</th>
+                    <th>Tên NVL</th>
+                    <th>Quy cách chuẩn</th>
+                    <th>ĐVT</th>
+                    <th>Tồn kho</th>
+                    <th class="vp-only">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card vp-only">
+            <h2>Thêm NVL mới</h2>
+            <div class="form-grid three-col">
+              <label
+                >Phân loại<input
+                  id="newCategory"
+                  list="categoryList"
+                  placeholder="Ví dụ: Thép, Hoá Chất..."
+              /></label>
+              <label>Tên NVL<input id="newName" /></label>
+              <label>Quy cách chuẩn<input id="newSpec" /></label>
+              <label
+                >ĐVT<select id="newUnit">
+                  <option>Kg</option>
+                  <option>Lít</option>
+                  <option>Bó</option>
+                  <option>Cái</option>
+                  <option>Đôi</option>
+                  <option>Mét</option>
+                  <option>Hộp</option>
+                  <option>Thùng</option>
+                  <option>Cuộn</option>
+                  <option>PCS</option>
+                </select></label
+              >
+              <label
+                >NCC Mặc định<select id="newSupplier">
+                  <option value="">-- Không chọn --</option>
+                </select></label
+              >
+              <label>Ghi chú<input id="newNote" /></label>
+            </div>
+            <datalist id="categoryList"></datalist>
+            <button id="addItemBtn" class="success">Thêm NVL</button>
+          </div>
+        </section>
+
+        <section id="tab-ncc" class="tab-content hidden vp-only">
+          <div class="card">
+            <div class="flex-between">
+              <div>
+                <h2>Danh sách nhà cung cấp</h2>
+                <p class="text-muted">Quản lý đối tác cung ứng vật tư, hỗ trợ sửa và ẩn/xóa an toàn.</p>
+              </div>
+              <div class="inline-filters">
+                <input id="supplierSearch" placeholder="Tìm kiếm NCC (Mã, tên, SĐT)..." />
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table id="supplierTable">
+                <thead>
+                  <tr>
+                    <th>Mã</th>
+                    <th>Tên NCC</th>
+                    <th>Địa chỉ</th>
+                    <th>Điện thoại</th>
+                    <th>Liên hệ</th>
+                    <th>Email</th>
+                    <th>Ghi chú</th>
+                    <th class="vp-only">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Thêm nhà cung cấp mới</h2>
+            <div class="form-grid three-col">
+              <label>Tên NCC (*)<input id="supName" placeholder="Tên công ty / đơn vị..." /></label>
+              <label>Địa chỉ<input id="supAddress" placeholder="Địa chỉ trụ sở / kho..." /></label>
+              <label>SĐT<input id="supPhone" placeholder="Số điện thoại liên hệ..." /></label>
+              <label>Người liên hệ<input id="supContact" placeholder="Họ tên người phụ trách..." /></label>
+              <label>Email<input id="supEmail" type="email" placeholder="email@ncc.com..." /></label>
+              <label>Ghi chú<input id="supNote" placeholder="Ghi chú thêm..." /></label>
+            </div>
+            <button id="addSupplierBtn" class="success" style="margin-top: 15px;">Thêm NCC</button>
+          </div>
+        </section>
+
+        <section id="tab-sanpham" class="tab-content hidden vp-only">
+          <div class="card">
+            <div class="flex-between">
+              <div>
+                <h2>Danh mục Mã Hàng Sản Xuất</h2>
+                <p class="text-muted">Danh mục thành phẩm / bán thành phẩm áp dụng cho việc cấp phát NVL ra chuyền sản xuất.</p>
+              </div>
+              <div class="inline-filters">
+                <input id="productSearch" placeholder="Tìm kiếm mã hoặc tên sản phẩm..." />
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table id="productTable">
+                <thead>
+                  <tr>
+                    <th>Mã SP</th>
+                    <th>Tên sản phẩm</th>
+                    <th>Quy cách / Tiêu chuẩn</th>
+                    <th>ĐVT</th>
+                    <th>Ghi chú</th>
+                    <th class="vp-only">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Thêm mã hàng sản xuất mới</h2>
+            <div class="form-grid three-col">
+              <label>Mã sản phẩm
+                <input id="newProductCode" placeholder="Để trống sẽ tự sinh mã (SP...)" />
+              </label>
+              <label>Tên sản phẩm (*)<input id="newProductName" placeholder="VD: Trục vít dẫn hướng Ø20..." /></label>
+              <label>Quy cách / Tiêu chuẩn<input id="newProductSpec" placeholder="VD: Dài 500mm, mạ crom..." /></label>
+              <label>Đơn vị tính
+                <select id="newProductUnit">
+                  <option value="Cái">Cái</option>
+                  <option value="Bộ">Bộ</option>
+                  <option value="Cây">Cây</option>
+                  <option value="Mét">Mét</option>
+                  <option value="Hộp">Hộp</option>
+                  <option value="Thùng">Thùng</option>
+                  <option value="Cuộn">Cuộn</option>
+                  <option value="Tấm">Tấm</option>
+                  <option value="Kg">Kg</option>
+                  <option value="PCS">PCS</option>
+                </select>
+              </label>
+              <label style="grid-column: span 2;">Ghi chú<input id="newProductNote" placeholder="Ghi chú kỹ thuật, mã bản vẽ..." /></label>
+            </div>
+            <button id="addProductBtn" class="success" style="margin-top: 15px;">Thêm Mã Hàng SX</button>
+          </div>
+        </section>
+
+        <section id="tab-baocao" class="tab-content hidden vp-only">
+          <div class="card">
+            <div class="flex-between">
+              <div>
+                <h2>Báo cáo Tồn Kho & Giao Dịch</h2>
+                <p class="text-muted">
+                  Lọc chi tiết và xuất dữ liệu ra file Excel chuẩn.
+                </p>
+              </div>
+              <div class="quick-buttons">
+                <button data-range="today" class="btn-sm">Hôm nay</button>
+                <button data-range="7days" class="btn-sm">7 ngày</button>
+                <button data-range="month" class="btn-sm">Tháng này</button>
+              </div>
+            </div>
+
+            <div
+              class="form-grid"
+              style="
+                grid-template-columns: repeat(4, 1fr);
+                background: #f1f5f9;
+                padding: 14px;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                align-items: end;
+              "
+            >
+              <label>Từ ngày<input type="date" id="reportFrom" /></label>
+              <label>Đến ngày<input type="date" id="reportTo" /></label>
+              <label
+                >Loại giao dịch
+                <select id="reportType">
+                  <option value="">Tất cả</option>
+                  <option value="NHAP_KHO">Nhập kho</option>
+                  <option value="XUAT_SAN_XUAT">Xuất Sản Xuất</option>
+                </select>
+              </label>
+              <label
+                >Tìm NVL<input id="reportQ" placeholder="Mã hoặc Tên..."
+              /></label>
+            </div>
+
+            <div style="margin-bottom: 16px; display: flex; gap: 10px">
+              <button id="loadReportBtn" style="flex: 1; font-size: 15px">
+                Xem Báo Cáo
+              </button>
+              <button
+                id="exportExcelBtn"
+                class="success"
+                style="font-size: 15px; background-color: #107c41"
+              >
+                Xuất Excel
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table id="reportTable">
+                <thead>
+                  <tr>
+                    <th>Mã NVL</th>
+                    <th>Tên NVL (Click...)</th>
+                    <th>Phân loại</th>
+                    <th>ĐVT</th>
+                    <th>Tổng Nhập</th>
+                    <th>Quy cách / KL Nhập (Tham chiếu)</th>
+                    <th>Tổng Xuất SX</th>
+                    <th>Tồn Kho</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="4">TỔNG CỘNG TOÀN KỲ</th>
+                    <th id="footIn">0</th>
+                    <th id="footWeight">-</th>
+                    <th id="footProd">0</th>
+                    <th>-</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <!-- Modal Sửa Thông Tin NVL -->
+    <div id="editItemModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h2 style="margin-top: 0; color: var(--navy)">
+          Sửa thông tin Nguyên Vật Liệu
+        </h2>
+        <input type="hidden" id="editItemCode" />
+        <div class="form-grid two-col" style="margin-bottom: 15px">
+          <label
+            >Phân loại <input id="editItemCat" list="categoryList"
+          /></label>
+          <label>Tên NVL <input id="editItemName" /></label>
+          <label>Quy cách chuẩn <input id="editItemSpec" /></label>
+          <label
+            >ĐVT
+            <select id="editItemUnit">
+              <option>Kg</option>
+              <option>Lít</option>
+              <option>Cái</option>
+              <option>Đôi</option>
+              <option>Mét</option>
+              <option>Hộp</option>
+              <option>Thùng</option>
+              <option>Cuộn</option>
+              <option>PCS</option>
+            </select>
+          </label>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end">
+          <button class="danger" onclick="closeEditModal()">Hủy bỏ</button>
+          <button class="success" onclick="saveEditItem()">Lưu thay đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Sửa Thông Tin Nhà Cung Cấp -->
+    <div id="editSupplierModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h2 style="margin-top: 0; color: var(--navy)">Sửa thông tin Nhà Cung Cấp</h2>
+        <input type="hidden" id="editSupCode" />
+        <div class="form-grid two-col" style="margin-bottom: 15px">
+          <label>Mã NCC
+            <input id="editSupCodeDisplay" disabled style="background:#eef2f6;" />
+          </label>
+          <label>Tên NCC (*)
+            <input id="editSupName" />
+          </label>
+          <label>Địa chỉ
+            <input id="editSupAddress" />
+          </label>
+          <label>Số điện thoại
+            <input id="editSupPhone" />
+          </label>
+          <label>Người liên hệ
+            <input id="editSupContact" />
+          </label>
+          <label>Email
+            <input id="editSupEmail" type="email" />
+          </label>
+          <label style="grid-column: 1 / -1;">Ghi chú
+            <input id="editSupNote" />
+          </label>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end">
+          <button class="danger" onclick="closeEditSupplierModal()">Hủy bỏ</button>
+          <button class="success" onclick="saveEditSupplier()">Lưu thay đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Sửa Thông Tin Mã Hàng Sản Xuất -->
+    <div id="editProductModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h2 style="margin-top: 0; color: var(--navy)">Sửa Mã Hàng Sản Xuất</h2>
+        <input type="hidden" id="editProductCode" />
+        <div class="form-grid two-col" style="margin-bottom: 15px">
+          <label>Mã sản phẩm
+            <input id="editProductCodeDisplay" disabled style="background:#eef2f6;" />
+          </label>
+          <label>Tên sản phẩm (*)
+            <input id="editProductName" />
+          </label>
+          <label>Quy cách / Tiêu chuẩn
+            <input id="editProductSpec" />
+          </label>
+          <label>Đơn vị tính
+            <select id="editProductUnit">
+              <option value="Cái">Cái</option>
+              <option value="Bộ">Bộ</option>
+              <option value="Cây">Cây</option>
+              <option value="Mét">Mét</option>
+              <option value="Hộp">Hộp</option>
+              <option value="Thùng">Thùng</option>
+              <option value="Cuộn">Cuộn</option>
+              <option value="Tấm">Tấm</option>
+              <option value="Kg">Kg</option>
+              <option value="PCS">PCS</option>
+            </select>
+          </label>
+          <label style="grid-column: 1 / -1;">Ghi chú
+            <input id="editProductNote" />
+          </label>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end">
+          <button class="danger" onclick="closeEditProductModal()">Hủy bỏ</button>
+          <button class="success" onclick="saveEditProduct()">Lưu thay đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

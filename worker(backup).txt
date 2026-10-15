@@ -1,0 +1,269 @@
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS, DELETE",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json; charset=UTF-8" };
+function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: jsonHeaders }); }
+function bad(message, status = 400) { return json({ error: message }, status); }
+async function body(request) { try { return await request.json(); } catch { return {}; } }
+function cleanDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null; }
+
+function movementFor(type, qty) {
+  const q = Number(qty);
+  const map = {
+    NHAP_KHO: { dk: q, dx: 0 },
+    XUAT_SAN_XUAT: { dk: -q, dx: 0 }
+  };
+  return map[type] || null;
+}
+
+async function getUser(env, maNv) {
+  return env.DB.prepare("SELECT ma_nv, ten_nv, bo_phan, role, active FROM Nguoi_Dung WHERE ma_nv = ?").bind(maNv).first();
+}
+
+async function getStock(env, maHang) {
+  return env.DB.prepare("SELECT ma_hang, ton_kho, ton_xuong, trang_thai FROM v_ton_nvl WHERE ma_hang = ?").bind(maHang).first();
+}
+
+function labelSql() {
+  return `CASE g.loai_giao_dich
+    WHEN 'NHAP_KHO' THEN 'Nhập Kho'
+    WHEN 'XUAT_SAN_XUAT' THEN 'Xuất Sản Xuất'
+    WHEN 'OPENING' THEN 'Tồn đầu kỳ'
+    ELSE g.loai_giao_dich END`;
+}
+
+export default {
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    try {
+      if (path === "/api/login" && request.method === "POST") {
+        const p = await body(request);
+        const user = await env.DB.prepare(`SELECT ma_nv, ten_nv, bo_phan, role FROM Nguoi_Dung WHERE ma_nv = ? AND password = ? AND active = 1`)
+          .bind(String(p.ma_nv || "").toUpperCase().trim(), String(p.password || "")).first();
+        if (!user) return bad("Sai tài khoản hoặc mật khẩu.", 401);
+        return json(user);
+      }
+
+      if (path === "/api/bootstrap" && request.method === "GET") {
+        const [items, nccs, products] = await Promise.all([
+          env.DB.prepare(`SELECT * FROM v_ton_nvl WHERE trang_thai != 'INACTIVE' ORDER BY phan_loai, ten_hang`).all(),
+          env.DB.prepare(`SELECT * FROM Nha_Cung_Cap WHERE active=1 ORDER BY ten_ncc`).all(),
+          env.DB.prepare(`SELECT * FROM San_Pham_SX WHERE active=1 ORDER BY ten_sp`).all(),
+        ]);
+        return json({ items: items.results, nccs: nccs.results, products: products.results });
+      }
+
+      if (path === "/api/items" && request.method === "POST") {
+        const p = await body(request);
+        if (!p.phan_loai || !p.ten_hang || !p.don_vi_tinh) return bad("Phân loại, tên NVL và đơn vị tính là bắt buộc.");
+        const row = await env.DB.prepare(`SELECT COALESCE(MAX(CAST(SUBSTR(ma_hang, 4) AS INTEGER)), 0) AS max_no FROM Danh_Muc_NVL WHERE ma_hang LIKE 'NVL%'`).first();
+        const maHang = `NVL${String(Number(row?.max_no || 0) + 1).padStart(3, "0")}`;
+        await env.DB.prepare(`
+          INSERT INTO Danh_Muc_NVL (ma_hang, phan_loai, ten_hang, quy_cach, don_vi_tinh, ma_ncc, ghi_chu)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(maHang, p.phan_loai.trim(), p.ten_hang.trim(), p.quy_cach || "", p.don_vi_tinh, p.ma_ncc || "", p.ghi_chu || "").run();
+        return json({ success: true, ma_hang: maHang });
+      }
+
+      // API MỚI: SỬA THÔNG TIN NVL
+      if (path === "/api/items/edit" && request.method === "POST") {
+        const p = await body(request);
+        if (!p.ma_hang || !p.ten_hang || !p.don_vi_tinh) return bad("Thiếu dữ liệu.");
+        await env.DB.prepare(`
+          UPDATE Danh_Muc_NVL 
+          SET phan_loai=?, ten_hang=?, quy_cach=?, don_vi_tinh=?, updated_at=datetime('now','+7 hours') 
+          WHERE ma_hang=?
+        `).bind(p.phan_loai, p.ten_hang, p.quy_cach, p.don_vi_tinh, p.ma_hang).run();
+        return json({ success: true });
+      }
+
+      // API MỚI: XÓA THÔNG MINH NVL
+      if (path === "/api/items/delete" && request.method === "POST") {
+        const p = await body(request);
+        if (!p.ma_hang) return bad("Thiếu mã hàng.");
+        
+        // Kiểm tra xem đã có giao dịch chưa
+        const check = await env.DB.prepare("SELECT COUNT(*) as count FROM Giao_Dich_NVL WHERE ma_hang=?").bind(p.ma_hang).first();
+        
+        if (check.count > 0) {
+          // Soft-delete (Ẩn đi)
+          await env.DB.prepare("UPDATE Danh_Muc_NVL SET trang_thai='INACTIVE' WHERE ma_hang=?").bind(p.ma_hang).run();
+        } else {
+          // Hard-delete (Xóa thật)
+          await env.DB.prepare("DELETE FROM Danh_Muc_NVL WHERE ma_hang=?").bind(p.ma_hang).run();
+        }
+        return json({ success: true });
+      }
+
+      if (path === "/api/suppliers" && request.method === "POST") {
+        const p = await body(request);
+        if (!p.ten_ncc) return bad("Tên nhà cung cấp là bắt buộc.");
+        const row = await env.DB.prepare(`SELECT COALESCE(MAX(CAST(SUBSTR(ma_ncc, 4) AS INTEGER)), 0) AS max_no FROM Nha_Cung_Cap WHERE ma_ncc LIKE 'NCC%'`).first();
+        const maNcc = `NCC${String(Number(row?.max_no || 0) + 1).padStart(3, "0")}`;
+        await env.DB.prepare(`
+          INSERT INTO Nha_Cung_Cap (ma_ncc, ten_ncc, dia_chi, so_dt, nguoi_lien_he, email, ghi_chu)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(maNcc, p.ten_ncc.trim(), p.dia_chi || "", p.so_dt || "", p.nguoi_lien_he || "", p.email || "", p.ghi_chu || "").run();
+        return json({ success: true, ma_ncc: maNcc });
+      }
+
+      if (path === "/api/transactions" && request.method === "POST") {
+        const p = await body(request);
+        const user = await getUser(env, p.user_id);
+        if (!user || !user.active || (user.bo_phan !== "XUONG" && user.bo_phan !== "SX")) return bad("Chỉ tài khoản Xưởng được tạo phiếu.", 403);
+        if (!Array.isArray(p.transactions) || p.transactions.length === 0) return bad("Phiếu chưa có NVL.");
+
+        const txDate = cleanDate(p.tx_date);
+        if (!txDate) return bad("Ngày giao dịch không hợp lệ.");
+
+        const projected = new Map();
+        const preparedRows = [];
+
+        for (const item of p.transactions) {
+          const qty = Number(item.so_luong);
+          if (!item.ma_hang || !Number.isFinite(qty) || qty <= 0) return bad("NVL hoặc số lượng không hợp lệ.");
+          if (!["NHAP_KHO", "XUAT_SAN_XUAT"].includes(item.loai_giao_dich)) return bad("Loại GD không hợp lệ.");
+          if (item.loai_giao_dich === "XUAT_SAN_XUAT" && !item.ma_sp_sx) return bad("Thiếu mã sản phẩm khi Xuất Sản Xuất.");
+
+          const stock = await getStock(env, item.ma_hang);
+          if (!stock) return bad(`Không tìm thấy mã NVL ${item.ma_hang}.`);
+          if (stock.trang_thai === "BLOCKED" && item.loai_giao_dich === "XUAT_SAN_XUAT") return bad(`Mã ${item.ma_hang} đang bị chặn xuất.`);
+
+          const mv = movementFor(item.loai_giao_dich, qty);
+          const current = projected.get(item.ma_hang) || { ton_kho: Number(stock.ton_kho || 0) };
+          
+          if (current.ton_kho + mv.dk < -1e-9) return bad(`Mã ${item.ma_hang}: Tồn kho không đủ.`);
+          
+          current.ton_kho += mv.dk;
+          projected.set(item.ma_hang, current);
+          preparedRows.push({ item, qty, mv });
+        }
+
+        const stmts = preparedRows.map(({ item, qty, mv }) => env.DB.prepare(`
+          INSERT INTO Giao_Dich_NVL
+          (ma_hang, loai_giao_dich, so_luong, delta_kho, delta_xuong,
+           trang_thai, nguoi_giao_dich, ma_ncc, ma_sp_sx, so_chung_tu, don_gia, thanh_tien, ghi_chu, thoi_gian_gd, sl_phu, dvt_phu, quy_cach_gd)
+          VALUES (?, ?, ?, ?, 0, 'approved', ?, ?, ?, ?, ?, ?, ?, ? || ' ' || strftime('%H:%M:%S','now','+7 hours'), ?, ?, ?, ?)
+        `).bind(
+          item.ma_hang, item.loai_giao_dich, qty, mv.dk, user.ma_nv,
+          item.ma_ncc || "", item.ma_sp_sx || "", item.so_chung_tu || "", Number(item.don_gia || 0), Number(item.don_gia || 0) * qty,
+          item.ghi_chu || "", txDate, Number(item.sl_phu || 0), item.dvt_phu || "", item.quy_cach_gd || "", Number(item.khoi_luong_kg || 0)
+        ));
+
+        await env.DB.batch(stmts);
+        return json({ success: true, status: "approved", count: stmts.length });
+      }
+
+      if (path === "/api/history" && request.method === "GET") {
+        const from = cleanDate(url.searchParams.get("from"));
+        const to = cleanDate(url.searchParams.get("to"));
+        const type = url.searchParams.get("type") || "";
+        const q = (url.searchParams.get("q") || "").trim();
+
+        const wh = ["g.trang_thai='approved'"];
+        const binds = [];
+        if (from) { wh.push("date(g.thoi_gian_gd) >= ?"); binds.push(from); }
+        if (to) { wh.push("date(g.thoi_gian_gd) <= ?"); binds.push(to); }
+        if (type) { wh.push("g.loai_giao_dich = ?"); binds.push(type); }
+        if (q) { 
+          wh.push("(g.ma_hang LIKE ? OR d.ten_hang LIKE ? OR d.phan_loai LIKE ?)"); 
+          const like = `%${q}%`; 
+          binds.push(like, like, like); 
+        }
+
+        const result = await env.DB.prepare(`
+          SELECT g.*, d.ten_hang, d.phan_loai, d.don_vi_tinh, u.ten_nv, s.ten_sp, ${labelSql()} AS loai_hien_thi
+          FROM Giao_Dich_NVL g
+          JOIN Danh_Muc_NVL d ON d.ma_hang=g.ma_hang 
+          LEFT JOIN Nguoi_Dung u ON u.ma_nv=g.nguoi_giao_dich 
+          LEFT JOIN San_Pham_SX s ON s.ma_sp=g.ma_sp_sx
+          WHERE ${wh.join(" AND ")}
+          ORDER BY g.thoi_gian_gd DESC, g.id DESC LIMIT 1000
+        `).bind(...binds).all();
+        return json({ rows: result.results });
+      }
+
+      if (path === "/api/report/daily" && request.method === "GET") {
+        const from = cleanDate(url.searchParams.get("from"));
+        const to = cleanDate(url.searchParams.get("to"));
+        const type = url.searchParams.get("type") || "";
+        const q = (url.searchParams.get("q") || "").trim();
+
+        if (!from || !to) return bad("Thiếu dữ liệu ngày.");
+        
+        const wh = ["g.trang_thai='approved'", "g.loai_giao_dich!='OPENING'", "date(g.thoi_gian_gd) BETWEEN ? AND ?"];
+        const binds = [from, to];
+
+        if (type) {
+            wh.push("g.loai_giao_dich = ?");
+            binds.push(type);
+        }
+        
+        if (q) {
+            wh.push("(g.ma_hang LIKE ? OR d.ten_hang LIKE ? OR d.phan_loai LIKE ?)");
+            const like = `%${q}%`;
+            binds.push(like, like, like);
+        }
+        
+        const rows = await env.DB.prepare(`
+          SELECT g.ma_hang, d.ten_hang, d.phan_loai, d.don_vi_tinh, v.ton_kho,
+            SUM(CASE WHEN g.loai_giao_dich='NHAP_KHO' THEN g.so_luong ELSE 0 END) AS nhap,
+            SUM(CASE WHEN g.loai_giao_dich='XUAT_SAN_XUAT' THEN g.so_luong ELSE 0 END) AS xuat_sx,
+            SUM(CASE WHEN g.loai_giao_dich='NHAP_KHO' THEN g.khoi_luong_kg ELSE 0 END) AS tong_kg_nhap,
+            GROUP_CONCAT(
+              CASE WHEN g.loai_giao_dich='NHAP_KHO' AND (g.sl_phu > 0 OR g.quy_cach_gd != '' OR g.khoi_luong_kg > 0)
+              THEN (CASE WHEN g.sl_phu > 0 THEN g.sl_phu || ' ' || g.dvt_phu || ' ' ELSE '' END) ||
+                   (CASE WHEN g.quy_cach_gd != '' THEN '[' || g.quy_cach_gd || '] ' ELSE '' END) ||
+                   (CASE WHEN g.khoi_luong_kg > 0 THEN '(' || g.khoi_luong_kg || ' Kg)' ELSE '' END)
+              END, ' ; '
+            ) AS tom_tat_quy_cach
+          FROM Giao_Dich_NVL g
+          JOIN Danh_Muc_NVL d ON d.ma_hang = g.ma_hang
+          JOIN v_ton_nvl v ON v.ma_hang = g.ma_hang
+          WHERE ${wh.join(" AND ")}
+          GROUP BY g.ma_hang, d.ten_hang, d.phan_loai, d.don_vi_tinh, v.ton_kho
+          ORDER BY d.phan_loai, d.ten_hang
+        `).bind(...binds).all();
+
+        const total = await env.DB.prepare(`
+          SELECT
+            SUM(CASE WHEN g.loai_giao_dich='NHAP_KHO' THEN g.so_luong ELSE 0 END) AS nhap,
+            SUM(CASE WHEN g.loai_giao_dich='XUAT_SAN_XUAT' THEN g.so_luong ELSE 0 END) AS xuat_sx
+          FROM Giao_Dich_NVL g
+          JOIN Danh_Muc_NVL d ON d.ma_hang = g.ma_hang
+          WHERE ${wh.join(" AND ")}
+        `).bind(...binds).first();
+
+        return json({ rows: rows.results, total: total || {} });
+      }
+
+      if (path === "/api/report/detail" && request.method === "GET") {
+        const maHang = url.searchParams.get("ma_hang");
+        const from = cleanDate(url.searchParams.get("from"));
+        const to = cleanDate(url.searchParams.get("to"));
+        if (!maHang) return bad("Thiếu mã hàng.");
+
+        const result = await env.DB.prepare(`
+          SELECT g.id, g.thoi_gian_gd, g.so_luong, g.loai_giao_dich,
+                 g.sl_phu, g.dvt_phu, g.quy_cach_gd, g.khoi_luong_kg, ${labelSql()} AS loai_hien_thi, 
+                 g.nguoi_giao_dich, u.ten_nv, s.ten_sp, g.ghi_chu
+          FROM Giao_Dich_NVL g
+          LEFT JOIN Nguoi_Dung u ON u.ma_nv=g.nguoi_giao_dich
+          LEFT JOIN San_Pham_SX s ON s.ma_sp=g.ma_sp_sx
+          WHERE g.trang_thai='approved' AND g.loai_giao_dich!='OPENING'
+            AND g.ma_hang=? AND date(g.thoi_gian_gd) BETWEEN ? AND ?
+          ORDER BY g.thoi_gian_gd DESC, g.id
+        `).bind(maHang, from, to).all();
+        return json({ rows: result.results });
+      }
+
+      return bad("API not found", 404);
+    } catch (e) { return bad(e?.message || "Lỗi máy chủ.", 500); }
+  }
+};
