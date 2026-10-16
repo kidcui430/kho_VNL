@@ -48,7 +48,9 @@
         <button class="nav-btn" data-tab="tab-vattu">Tồn kho</button>
         <button class="nav-btn vp-only" data-tab="tab-baocao">Báo cáo</button>
         <button class="nav-btn vp-only" data-tab="tab-ncc">Nhà cung cấp</button>
-        <button class="nav-btn vp-only" data-tab="tab-sanpham">Mã hàng SX</button>
+        <button class="nav-btn vp-only" data-tab="tab-sanpham">
+          Mã hàng SX
+        </button>
       </nav>
 
       <main class="container">
@@ -371,10 +373,15 @@
             <div class="flex-between">
               <div>
                 <h2>Danh sách nhà cung cấp</h2>
-                <p class="text-muted">Quản lý đối tác cung ứng vật tư, hỗ trợ sửa và ẩn/xóa an toàn.</p>
+                <p class="text-muted">
+                  Quản lý đối tác cung ứng vật tư, hỗ trợ sửa và ẩn/xóa an toàn.
+                </p>
               </div>
               <div class="inline-filters">
-                <input id="supplierSearch" placeholder="Tìm kiếm NCC (Mã, tên, SĐT)..." />
+                <input
+                  id="supplierSearch"
+                  placeholder="Tìm kiếm NCC (Mã, tên, SĐT)..."
+                />
               </div>
             </div>
             <div class="table-responsive">
@@ -398,14 +405,41 @@
           <div class="card">
             <h2>Thêm nhà cung cấp mới</h2>
             <div class="form-grid three-col">
-              <label>Tên NCC (*)<input id="supName" placeholder="Tên công ty / đơn vị..." /></label>
-              <label>Địa chỉ<input id="supAddress" placeholder="Địa chỉ trụ sở / kho..." /></label>
-              <label>SĐT<input id="supPhone" placeholder="Số điện thoại liên hệ..." /></label>
-              <label>Người liên hệ<input id="supContact" placeholder="Họ tên người phụ trách..." /></label>
-              <label>Email<input id="supEmail" type="email" placeholder="email@ncc.com..." /></label>
-              <label>Ghi chú<input id="supNote" placeholder="Ghi chú thêm..." /></label>
+              <label
+                >Tên NCC (*)<input
+                  id="supName"
+                  placeholder="Tên công ty / đơn vị..."
+              /></label>
+              <label
+                >Địa chỉ<input
+                  id="supAddress"
+                  placeholder="Địa chỉ trụ sở / kho..."
+              /></label>
+              <label
+                >SĐT<input id="supPhone" placeholder="Số điện thoại liên hệ..."
+              /></label>
+              <label
+                >Người liên hệ<input
+                  id="supContact"
+                  placeholder="Họ tên người phụ trách..."
+              /></label>
+              <label
+                >Email<input
+                  id="supEmail"
+                  type="email"
+                  placeholder="email@ncc.com..."
+              /></label>
+              <label
+                >Ghi chú<input id="supNote" placeholder="Ghi chú thêm..."
+              /></label>
             </div>
-            <button id="addSupplierBtn" class="success" style="margin-top: 15px;">Thêm NCC</button>
+            <button
+              id="addSupplierBtn"
+              class="success"
+              style="margin-top: 15px"
+            >
+              Thêm NCC
+            </button>
           </div>
         </section>
 
@@ -414,10 +448,16 @@
             <div class="flex-between">
               <div>
                 <h2>Danh mục Mã Hàng Sản Xuất</h2>
-                <p class="text-muted">Danh mục thành phẩm / bán thành phẩm áp dụng cho việc cấp phát NVL ra chuyền sản xuất.</p>
+                <p class="text-muted">
+                  Danh mục thành phẩm / bán thành phẩm áp dụng cho việc cấp phát
+                  NVL ra chuyền sản xuất.
+                </p>
               </div>
               <div class="inline-filters">
-                <input id="productSearch" placeholder="Tìm kiếm mã hoặc tên sản phẩm..." />
+                <input
+                  id="productSearch"
+                  placeholder="Tìm kiếm mã hoặc tên sản phẩm..."
+                />
               </div>
             </div>
             <div class="table-responsive">
@@ -440,12 +480,25 @@
           <div class="card">
             <h2>Thêm mã hàng sản xuất mới</h2>
             <div class="form-grid three-col">
-              <label>Mã sản phẩm
-                <input id="newProductCode" placeholder="Để trống sẽ tự sinh mã (SP...)" />
+              <label
+                >Mã sản phẩm
+                <input
+                  id="newProductCode"
+                  placeholder="Để trống sẽ tự sinh mã (SP...)"
+                />
               </label>
-              <label>Tên sản phẩm (*)<input id="newProductName" placeholder="VD: Trục vít dẫn hướng Ø20..." /></label>
-              <label>Quy cách / Tiêu chuẩn<input id="newProductSpec" placeholder="VD: Dài 500mm, mạ crom..." /></label>
-              <label>Đơn vị tính
+              <label
+                >Tên sản phẩm (*)<input
+                  id="newProductName"
+                  placeholder="VD: Trục vít dẫn hướng Ø20..."
+              /></label>
+              <label
+                >Quy cách / Tiêu chuẩn<input
+                  id="newProductSpec"
+                  placeholder="VD: Dài 500mm, mạ crom..."
+              /></label>
+              <label
+                >Đơn vị tính
                 <select id="newProductUnit">
                   <option value="Cái">Cái</option>
                   <option value="Bộ">Bộ</option>
@@ -459,9 +512,15 @@
                   <option value="PCS">PCS</option>
                 </select>
               </label>
-              <label style="grid-column: span 2;">Ghi chú<input id="newProductNote" placeholder="Ghi chú kỹ thuật, mã bản vẽ..." /></label>
+              <label style="grid-column: span 2"
+                >Ghi chú<input
+                  id="newProductNote"
+                  placeholder="Ghi chú kỹ thuật, mã bản vẽ..."
+              /></label>
             </div>
-            <button id="addProductBtn" class="success" style="margin-top: 15px;">Thêm Mã Hàng SX</button>
+            <button id="addProductBtn" class="success" style="margin-top: 15px">
+              Thêm Mã Hàng SX
+            </button>
           </div>
         </section>
 
@@ -469,16 +528,14 @@
           <div class="card">
             <div class="flex-between">
               <div>
-                <h2>Báo cáo Tồn Kho & Giao Dịch</h2>
-                <p class="text-muted">
-                  Lọc chi tiết và xuất dữ liệu ra file Excel chuẩn.
-                </p>
+                <h2>Báo cáo TỔNG</h2>
+                <p class="text-muted">Bảng LỌC và xuất file Excel.</p>
               </div>
-              <div class="quick-buttons">
+              <!-- <div class="quick-buttons">
                 <button data-range="today" class="btn-sm">Hôm nay</button>
                 <button data-range="7days" class="btn-sm">7 ngày</button>
                 <button data-range="month" class="btn-sm">Tháng này</button>
-              </div>
+              </div> -->
             </div>
 
             <div
@@ -589,34 +646,51 @@
     <!-- Modal Sửa Thông Tin Nhà Cung Cấp -->
     <div id="editSupplierModal" class="modal-overlay hidden">
       <div class="modal-box">
-        <h2 style="margin-top: 0; color: var(--navy)">Sửa thông tin Nhà Cung Cấp</h2>
+        <h2 style="margin-top: 0; color: var(--navy)">
+          Sửa thông tin Nhà Cung Cấp
+        </h2>
         <input type="hidden" id="editSupCode" />
         <div class="form-grid two-col" style="margin-bottom: 15px">
-          <label>Mã NCC
-            <input id="editSupCodeDisplay" disabled style="background:#eef2f6;" />
+          <label
+            >Mã NCC
+            <input
+              id="editSupCodeDisplay"
+              disabled
+              style="background: #eef2f6"
+            />
           </label>
-          <label>Tên NCC (*)
+          <label
+            >Tên NCC (*)
             <input id="editSupName" />
           </label>
-          <label>Địa chỉ
+          <label
+            >Địa chỉ
             <input id="editSupAddress" />
           </label>
-          <label>Số điện thoại
+          <label
+            >Số điện thoại
             <input id="editSupPhone" />
           </label>
-          <label>Người liên hệ
+          <label
+            >Người liên hệ
             <input id="editSupContact" />
           </label>
-          <label>Email
+          <label
+            >Email
             <input id="editSupEmail" type="email" />
           </label>
-          <label style="grid-column: 1 / -1;">Ghi chú
+          <label style="grid-column: 1 / -1"
+            >Ghi chú
             <input id="editSupNote" />
           </label>
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end">
-          <button class="danger" onclick="closeEditSupplierModal()">Hủy bỏ</button>
-          <button class="success" onclick="saveEditSupplier()">Lưu thay đổi</button>
+          <button class="danger" onclick="closeEditSupplierModal()">
+            Hủy bỏ
+          </button>
+          <button class="success" onclick="saveEditSupplier()">
+            Lưu thay đổi
+          </button>
         </div>
       </div>
     </div>
@@ -627,16 +701,24 @@
         <h2 style="margin-top: 0; color: var(--navy)">Sửa Mã Hàng Sản Xuất</h2>
         <input type="hidden" id="editProductCode" />
         <div class="form-grid two-col" style="margin-bottom: 15px">
-          <label>Mã sản phẩm
-            <input id="editProductCodeDisplay" disabled style="background:#eef2f6;" />
+          <label
+            >Mã sản phẩm
+            <input
+              id="editProductCodeDisplay"
+              disabled
+              style="background: #eef2f6"
+            />
           </label>
-          <label>Tên sản phẩm (*)
+          <label
+            >Tên sản phẩm (*)
             <input id="editProductName" />
           </label>
-          <label>Quy cách / Tiêu chuẩn
+          <label
+            >Quy cách / Tiêu chuẩn
             <input id="editProductSpec" />
           </label>
-          <label>Đơn vị tính
+          <label
+            >Đơn vị tính
             <select id="editProductUnit">
               <option value="Cái">Cái</option>
               <option value="Bộ">Bộ</option>
@@ -650,13 +732,18 @@
               <option value="PCS">PCS</option>
             </select>
           </label>
-          <label style="grid-column: 1 / -1;">Ghi chú
+          <label style="grid-column: 1 / -1"
+            >Ghi chú
             <input id="editProductNote" />
           </label>
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end">
-          <button class="danger" onclick="closeEditProductModal()">Hủy bỏ</button>
-          <button class="success" onclick="saveEditProduct()">Lưu thay đổi</button>
+          <button class="danger" onclick="closeEditProductModal()">
+            Hủy bỏ
+          </button>
+          <button class="success" onclick="saveEditProduct()">
+            Lưu thay đổi
+          </button>
         </div>
       </div>
     </div>
